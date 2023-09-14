@@ -1,11 +1,11 @@
 #include "HT_SSD1306Wire.h"
 #include "LoRaWan_APP.h"
-#include "TinyGPS.h"
+#include "TinyGPS++.h"
 #include "Wire.h"
 #include <Arduino.h>
 
 // Parser for GPS strings.
-TinyGPS gps;
+TinyGPSPlus gps;
 // UART connection to the GPS module.
 HardwareSerial gpsSerial(1);
 
@@ -140,12 +140,10 @@ void display_tx_done(uint8_t tries, bool acked) {
 
 // Read the GPS and create an outgoing packet structure.
 void prepareTxFrame(void) {
-  // We are going to send 11 bytes.
-  appDataSize = 11;
-
-  // To read GPS.
-  long lat, lng;
-  unsigned long age = 9999999;
+  // We are going to send 20 bytes.
+  appDataSize = 20;
+  
+  uint32_t age = 9999999;
 
   // Wait until we have fresh data.
   while (age > 1000) {
@@ -153,40 +151,68 @@ void prepareTxFrame(void) {
     while (gpsSerial.available() > 0) {
       gps.encode(gpsSerial.read());
     }
-    // Retrieve the GPS location in millionths of degrees.
-    gps.get_position(&lat, &lng, &age);
 
-    Serial.println("Lat: " + String(lat) + ", Lng: " + String(lng) + ", Age: " + String(age));
-
-    // If we don't have a fix wait and retry.
-    if (lat == 999999999) {
-      delay(1000);
+    age = gps.location.age();
+    if (age > 1000) {
       continue;
     }
 
+    // Retrieve the GPS location in billionths of degrees.
+    int16_t lat_whle, lng_whle;
+    uint32_t lat_frac, lng_frac;
+    lat_whle = (gps.location.rawLat().negative ? -1 : 1) * ((int16_t) gps.location.rawLat().deg);
+    lat_frac = gps.location.rawLat().billionths;
+    lng_whle = (gps.location.rawLng().negative ? -1 : 1) * ((int16_t) gps.location.rawLng().deg);
+    lng_frac = gps.location.rawLng().billionths;
+
+    // Retrieve properties of the GPS reading.
+    int16_t altitude, hdop;
+    uint8_t satellites;
+    altitude = (int16_t) gps.altitude.value();
+    hdop = (int16_t) gps.hdop.value();
+    satellites = (uint8_t) gps.satellites.value();
+
+    printf("Lat: %i+%i/1000000000, Lng: %i+%i/1000000000, Age: %i\n", lat_whle, lat_frac, lng_whle, lng_frac, age);
+    printf("Altitude (cm): %i, HDOP: %i, #satellites: %i\n", altitude, hdop, satellites);
+
     // Create our packet structure.
     appData[0] = (1 << 7); // our GPS
+    // Latitude
+    appData[ 1] = (lat_whle >> 0) & 0xFF;
+    appData[ 2] = (lat_whle >> 8) & 0xFF;
+    appData[ 3] = (lat_frac >> 0) & 0xFF;
+    appData[ 4] = (lat_frac >> 8) & 0xFF;
+    appData[ 5] = (lat_frac >> 16) & 0xFF;
+    appData[ 6] = (lat_frac >> 24) & 0xFF;
+    // Longitude
+    appData[ 7] = (lng_whle >> 0) & 0xFF;
+    appData[ 8] = (lng_whle >> 8) & 0xFF;
+    appData[ 9] = (lng_frac >> 0) & 0xFF;
+    appData[10] = (lng_frac >> 8) & 0xFF;
+    appData[11] = (lng_frac >> 16) & 0xFF;
+    appData[12] = (lng_frac >> 24) & 0xFF;
+    // Altitude
+    appData[13] = (altitude >> 0) & 0xFF;
+    appData[14] = (altitude >> 8) & 0xFF;
+    // Horizontal Dim. of Precision (HDOP)
+    appData[15] = (hdop >> 0) & 0xFF;
+    appData[16] = (hdop >> 8) & 0xFF;
+    // Satellites
+    appData[17] = satellites;
+    // Count
+    appData[18]  = (count >> 0) & 0xFF;
+    appData[19] = (count >> 8) & 0xFF;
 
-    appData[1] = (lat >> 0) & 0xFF;
-    appData[2] = (lat >> 8) & 0xFF;
-    appData[3] = (lat >> 16) & 0xFF;
-    appData[4] = (lat >> 24) & 0xFF;
-
-    appData[5] = (lng >> 0) & 0xFF;
-    appData[6] = (lng >> 8) & 0xFF;
-    appData[7] = (lng >> 16) & 0xFF;
-    appData[8] = (lng >> 24) & 0xFF;
-
-    appData[9]  = (count >> 0) & 0xFF;
-    appData[10] = (count >> 8) & 0xFF;
-
-    for (int i = 0; i < 11; i++) {
+    for (int i = 0; i < appDataSize; i++) {
       Serial.print(appData[i], HEX);
       Serial.print(" ");
     }
     Serial.println("");
 
     // Display the GPS data to the OLED.
+    int32_t lat, lng;
+    lat = (((int32_t) lat_whle) * 1000000) + ((lat_whle?-1:1) * ((int32_t) (lat_frac / 1000)));
+    lng = (((int32_t) lng_whle) * 1000000) + ((lng_whle?-1:1) * ((int32_t) (lng_frac / 1000)));
     display_gps(lat, lng);
   }
 }
