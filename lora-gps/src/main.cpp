@@ -61,6 +61,9 @@ uint8_t confirmedNbTrials = 8;
 // Keep a running counter of how many packets have been sent since reset.
 RTC_DATA_ATTR uint16_t count = 0;
 
+// Whether the GPS has a lock or not.
+RTC_DATA_ATTR bool gps_locked = false;
+
 // Driver for the OLED display.
 //
 // THIS MUST BE DEFINED LAST. (I don't know why.)
@@ -134,6 +137,22 @@ void display_tx_done(uint8_t tries, bool acked) {
   delay(4000);
 }
 
+// Display LoRaWAN Join and GPS status.
+void display_status(bool lora_joined, bool gps_found) {
+  char msg[32];
+  display.clear();
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(4, 10, "GPSLoRa Status");
+  display.setFont(ArialMT_Plain_10);
+  snprintf(msg, 32, "LoRa: %s", (lora_joined?"Joined":"Joining..."));
+  display.drawString(4, 25, msg);
+  snprintf(msg, 32, "GPS: %s", (gps_found?"Found":"Searching..."));
+  display.drawString(4, 35, msg);
+  display.display();
+  delay(2000);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // TX Packet and GPS Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -144,6 +163,7 @@ void prepareTxFrame(void) {
   appDataSize = 20;
   
   uint32_t age = 9999999;
+  int gps_count = 0;
 
   // Wait until we have fresh data.
   while (age > 1000) {
@@ -154,8 +174,15 @@ void prepareTxFrame(void) {
 
     age = gps.location.age();
     if (age > 1000) {
+      gps_count += 1;
+      if (gps_count > 3) {
+        gps_locked = false;
+      }
+      display_status(true, gps_locked);
       continue;
     }
+
+    gps_locked = true;
 
     // Retrieve the GPS location in billionths of degrees.
     int16_t lat_whle, lng_whle;
@@ -223,12 +250,7 @@ void prepareTxFrame(void) {
 
 // Called when we have joined a LoRaWAN network.
 static void joined(void) {
-  display.clear();
-  display.setFont(ArialMT_Plain_16);
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.drawString(4, 20, "Status: Joined");
-  display.display();
-  delay(2000);
+  display_status(true, gps_locked);
 
   // Create a new packet to send.
   prepareTxFrame();
