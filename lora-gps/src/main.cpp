@@ -64,6 +64,9 @@ RTC_DATA_ATTR uint16_t count = 0;
 // Whether the GPS has a lock or not.
 RTC_DATA_ATTR bool gps_locked = false;
 
+// Number of unacked packets in a row.
+RTC_DATA_ATTR uint16_t failed_tx_consecutive = 0;
+
 // Driver for the OLED display.
 //
 // THIS MUST BE DEFINED LAST. (I don't know why.)
@@ -149,6 +152,8 @@ void display_status(bool lora_joined, bool gps_found) {
   display.drawString(4, 25, msg);
   snprintf(msg, 32, "GPS: %s", (gps_found?"Found":"Searching..."));
   display.drawString(4, 35, msg);
+  snprintf(msg, 32, "Failed Cnt: %i", failed_tx_consecutive);
+  display.drawString(4, 45, msg);
   display.display();
   delay(2000);
 }
@@ -244,6 +249,15 @@ void prepareTxFrame(void) {
   }
 }
 
+static void send_packet(void) {
+  prepareTxFrame();
+
+  // Since we are sending a packet, increment our counter.
+  count += 1;
+
+  LoRaWAN.send(true, confirmedNbTrials, appPort);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Callback Functions
 ///////////////////////////////////////////////////////////////////////////////
@@ -252,13 +266,7 @@ void prepareTxFrame(void) {
 static void joined(void) {
   display_status(true, gps_locked);
 
-  // Create a new packet to send.
-  prepareTxFrame();
-
-  // Since we are sending a packet, increment our counter.
-  count += 1;
-
-  LoRaWAN.send(true, confirmedNbTrials, appPort);
+  send_packet();
 }
 
 // Called after a packet has been sent.
@@ -269,9 +277,21 @@ static void sent(uint8_t tries, bool acked) {
   display_tx_done(tries, acked);
 
   if (!acked) {
-    // If we didn't get an ack we immediately try to join again.
-    LoRaWAN.join(LORA_OTAA, true);
+    // Increment our failed counter.
+    failed_tx_consecutive += 1;
+
+    // If we have relatively few failures, just try to send again.
+    if (failed_tx_consecutive < 5) {
+      send_packet();
+    } else {
+      // If we have many failed packets, try to re-join the network.
+      failed_tx_consecutive = 0;
+      LoRaWAN.join(LORA_OTAA, true);
+    }
   } else {
+    // Reset failed counter if needed.
+    failed_tx_consecutive = 0;
+
     // We want to wait for a period of time and then prepare and send another
     // packet. To do so in a low power mode, we use the LoRaWAN `cycle()` function
     // which will reboot the ESP32 chip after the desired amount of time.
