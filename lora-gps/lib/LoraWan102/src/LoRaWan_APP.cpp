@@ -54,6 +54,21 @@ void (*SentDone)(uint8_t, bool);
 void (*SendAcked)(void);
 void (*ReceivedData)(McpsIndication_t *mcpsIndication);
 
+// Markers for pending callbacks. This let's us do all callbacks
+// before sleep rather than interrupting the state machine.
+bool join_callback_pending = false;
+
+bool sent_callback_pending = false;
+uint8_t sent_callback_retries = 0;
+bool sent_callback_acked = false;
+
+bool send_acked_callback_pending = false;
+
+bool received_data_callback_pending = false;
+McpsIndication_t* received_data_callback_indication = NULL;
+
+
+
 // Returns true if the device is currently connected to a network,
 // false otherwise.
 static bool isJoinedToNetwork(void) {
@@ -75,9 +90,6 @@ static bool isJoinedToNetwork(void) {
 static void TxNextPacketTimerEvent(void) {
   TimerStop(&TxNextPacketTimer);
 
-  if (isJoinedToNetwork()) {
-    deviceState = DEVICE_STATE_JOINED;
-  } else {
     // Network not joined yet. Try to join again
     MlmeReq_t mlmeReq;
     mlmeReq.Type = MLME_JOIN;
@@ -86,12 +98,15 @@ static void TxNextPacketTimerEvent(void) {
     mlmeReq.Req.Join.AppKey   = appKey;
     mlmeReq.Req.Join.NbTrials = 1;
 
-    if ( LoRaMacMlmeRequest( &mlmeReq ) == LORAMAC_STATUS_OK ) {
+    LoRaMacStatus_t status = LoRaMacMlmeRequest(&mlmeReq);
+    if (status == LORAMAC_STATUS_OK ) {
+      printf("joining...\n");
       deviceState = DEVICE_STATE_JOINING;
     } else {
+      printf("error joining %i\n", status);
       deviceState = DEVICE_STATE_INIT_DONE;
     }
-  }
+  // }
 }
 
 /*!
@@ -101,12 +116,16 @@ static void TxNextPacketTimerEvent(void) {
  *               containing confirm attributes.
  */
 static void McpsConfirm(McpsConfirm_t *mcpsConfirm) {
+  printf("MCPS %i\n", mcpsConfirm->Status);
+
   if (mcpsConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK) {
     switch (mcpsConfirm->McpsRequest) {
       case MCPS_UNCONFIRMED: {
         // Check Datarate
         // Check TxPower
-        SentDone(1, false);
+        sent_callback_pending = true;
+        sent_callback_retries = 1;
+        sent_callback_acked = false;
         break;
       }
       case MCPS_CONFIRMED: {
@@ -114,7 +133,9 @@ static void McpsConfirm(McpsConfirm_t *mcpsConfirm) {
         // Check TxPower
         // Check AckReceived
         // Check NbTrials
-        SentDone(mcpsConfirm->NbRetries, mcpsConfirm->AckReceived);
+        sent_callback_pending = true;
+        sent_callback_retries = mcpsConfirm->NbRetries;
+        sent_callback_acked = mcpsConfirm->AckReceived;
         break;
       }
       case MCPS_PROPRIETARY: {
@@ -123,7 +144,13 @@ static void McpsConfirm(McpsConfirm_t *mcpsConfirm) {
       default:
         break;
     }
+  } else {
+    sent_callback_pending = true;
+    sent_callback_retries = mcpsConfirm->NbRetries;
+    sent_callback_acked = false;
   }
+
+
   // Reset state and verify we got this callback when we expected.
   if (deviceState == DEVICE_STATE_SENDING) {
     deviceState = DEVICE_STATE_JOINED;
@@ -165,11 +192,12 @@ static void McpsIndication( McpsIndication_t *mcpsIndication ) {
           (int)mcpsIndication->RxDoneDatarate);
 
   if (mcpsIndication->AckReceived) {
-    SendAcked();
+    send_acked_callback_pending = true;
   }
 
   if (mcpsIndication->RxData == true) {
-    ReceivedData(mcpsIndication);
+    received_data_callback_indication = mcpsIndication;
+    received_data_callback_pending = true;
   }
 
   // Check Multicast
@@ -201,8 +229,7 @@ static void MlmeConfirm(MlmeConfirm_t *mlmeConfirm) {
       if ( mlmeConfirm->Status == LORAMAC_EVENT_INFO_STATUS_OK ) {
         printf("joined\r\n");
         deviceState = DEVICE_STATE_JOINED;
-
-        JoinedDone();
+        join_callback_pending = true;
       } else {
         uint32_t rejoin_delay = 30000;
         printf("%d\n", mlmeConfirm->Status);
@@ -417,7 +444,7 @@ void LoRaWanClass::init(
   ReceivedData = ReceivedDataCb;
 
   // Initialize our state for this class.
-  this->join_callback_pending = false;
+  join_callback_pending = false;
 
   MibRequestConfirm_t mibReq;
 
@@ -469,13 +496,13 @@ void LoRaWanClass::init(
   }
 }
 
-void LoRaWanClass::join(bool useOverTheAirActivation) {
-  // Check if we are already joined to a network.
-  if (isJoinedToNetwork()) {
+void LoRaWanClass::join(bool useOverTheAirActivation, bool force) {
+  // Check if we are already joined to a network, unless we are forcing a new join request.
+  if (!force && isJoinedToNetwork()) {
     deviceState = DEVICE_STATE_JOINED;
 
     // Need to mark that we need to issue the joined callback before going to sleep.
-    this->join_callback_pending = true;
+    join_callback_pending = true;
 
     return;
   }
@@ -574,9 +601,18 @@ void LoRaWanClass::cycle(uint32_t timeout_ms) {
 void LoRaWanClass::sleep() {
   Radio.IrqProcess();
 
-  if (this->join_callback_pending) {
-    this->join_callback_pending = false;
+  if (join_callback_pending) {
+    join_callback_pending = false;
     JoinedDone();
+  } else if (sent_callback_pending) {
+    sent_callback_pending = false;
+    SentDone(sent_callback_retries, sent_callback_acked);
+  } else if (send_acked_callback_pending) {
+    send_acked_callback_pending = false;
+    SendAcked();
+  } else if (received_data_callback_pending) {
+    received_data_callback_pending = false;
+    ReceivedData(received_data_callback_indication);
   } else {
     Mcu.sleep(this->lorawan_class, debugLevel);
   }

@@ -39,7 +39,7 @@ public:
   void init(DeviceClass_t, LoRaMacRegion_t, bool, void (*JoinedDone)(void), void (*SentDone)(uint8_t, bool),
             void (*SendAcked)(void),
             void (*ReceivedData)(McpsIndication_t*));
-  void join(bool);
+  void join(bool, bool);
   void send(bool, uint8_t, uint8_t);
   void cycle(uint32_t timeout_ms);
   void sleep();
@@ -49,9 +49,6 @@ public:
 private:
   DeviceClass_t lorawan_class;
   LoRaMacRegion_t lorawan_region;
-
-  // Marker that we need to call the join callback instead of going to sleep.
-  bool join_callback_pending;
 };
 
 extern enum eDeviceState_LoraWan deviceState;
