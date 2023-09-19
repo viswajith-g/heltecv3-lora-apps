@@ -268,14 +268,19 @@ static void sent(uint8_t tries, bool acked) {
   // Show status on OLED.
   display_tx_done(tries, acked);
 
-  // We want to wait for a period of time and then prepare and send another
-  // packet. To do so in a low power mode, we use the LoRaWAN `cycle()` function
-  // which will reboot the ESP32 chip after the desired amount of time.
-  //
-  // Note, all state is NOT lost in this operation. State marked `RTC_DATA_ATTR`
-  // will be preserved, and the LoRaWAN stack uses this extensively. So, when
-  // the chip restarts we will still be joined to the LoRaWAN network.
-  LoRaWAN.cycle(SLEEP_TIME_BETWEEN_EVENTS_MS);
+  if (!acked) {
+    // If we didn't get an ack we immediately try to join again.
+    LoRaWAN.join(LORA_OTAA, true);
+  } else {
+    // We want to wait for a period of time and then prepare and send another
+    // packet. To do so in a low power mode, we use the LoRaWAN `cycle()` function
+    // which will reboot the ESP32 chip after the desired amount of time.
+    //
+    // Note, all state is NOT lost in this operation. State marked `RTC_DATA_ATTR`
+    // will be preserved, and the LoRaWAN stack uses this extensively. So, when
+    // the chip restarts we will still be joined to the LoRaWAN network.
+    LoRaWAN.cycle(SLEEP_TIME_BETWEEN_EVENTS_MS);
+  }
 }
 
 static void acked(void) {
@@ -339,7 +344,7 @@ void setup() {
   // is already established, or if we are connecting for the first
   // time (after a full power cycle for example).
   LoRaWAN.init(CLASS_A, LORAWAN_ACTIVE_REGION, loraWanAdr, joined, sent, acked, received);
-  LoRaWAN.join(LORA_OTAA);
+  LoRaWAN.join(LORA_OTAA, false);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
