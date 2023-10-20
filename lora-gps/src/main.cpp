@@ -14,7 +14,7 @@ const int GPS_TX_PIN = 45;
 
 // How long to sleep after a packet has been transmitted before
 // sending the next packet.
-const int SLEEP_TIME_BETWEEN_EVENTS_MS = 15000;
+const int SLEEP_TIME_BETWEEN_EVENTS_MS = 10000;
 
 // Use Over the Air Activation for joining the LoRaWAN network.
 const bool LORA_OTAA = true;
@@ -60,6 +60,8 @@ uint8_t confirmedNbTrials = 8;
 
 // Keep a running counter of how many packets have been sent since reset.
 RTC_DATA_ATTR uint16_t count = 0;
+// Keep a count of how many packets have been acknowledged since reset.
+RTC_DATA_ATTR uint16_t acked_count = 0;
 
 // Whether the GPS has a lock or not.
 RTC_DATA_ATTR bool gps_locked = false;
@@ -82,6 +84,7 @@ void display_gps(long lat, long lng) {
   char lat_str[25];
   char lng_str[25];
   char cnt_str[25];
+  char ack_str[25];
 
   char lat_dir = 'N';
   char lng_dir = 'E';
@@ -107,6 +110,7 @@ void display_gps(long lat, long lng) {
   snprintf(lng_str, 25, "%i°%i.%i'%c", lng_deg, lng_min, lng_min_rem, lng_dir);
 
   snprintf(cnt_str, 25, "Count: %i", count);
+  snprintf(ack_str, 25, "Acked: %i", acked_count);
 
   display.init();
   display.clear();
@@ -117,6 +121,7 @@ void display_gps(long lat, long lng) {
   display.drawString(4, 20, lat_str);
   display.drawString(4, 30, lng_str);
   display.drawString(4, 40, cnt_str);
+  display.drawString(4, 50, ack_str);
   display.display();
   delay(2000);
 }
@@ -292,6 +297,9 @@ static void sent(uint8_t tries, bool acked) {
     // Reset failed counter if needed.
     failed_tx_consecutive = 0;
 
+    // Increment number of packets acked.
+    acked_count += 1;
+
     // We want to wait for a period of time and then prepare and send another
     // packet. To do so in a low power mode, we use the LoRaWAN `cycle()` function
     // which will reboot the ESP32 chip after the desired amount of time.
@@ -300,6 +308,8 @@ static void sent(uint8_t tries, bool acked) {
     // will be preserved, and the LoRaWAN stack uses this extensively. So, when
     // the chip restarts we will still be joined to the LoRaWAN network.
     LoRaWAN.cycle(SLEEP_TIME_BETWEEN_EVENTS_MS);
+  
+    // send_packet();
   }
 }
 
