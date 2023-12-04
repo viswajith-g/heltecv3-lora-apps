@@ -15,5 +15,5 @@ Setup Instructions
    Add Folder to Workspace` and then select one of the folders in this
    repository.
 4. Once open, there should be a blue bar at the bottom of VSCode. To compile the
-   application, chose the checkmark in the blue bar. To load the program onto a
-   Heltec WiFi LoRa v3 board, click the right arrow icon.
+   application, click the checkmark in the blue bar (the hover tooltip will be "Build").
+   To load the program onto a Heltec WiFi LoRa v3 board, click the right arrow icon ("Upload").
