@@ -35,6 +35,9 @@ void setup()
 
 void loop()
 {
+    Serial.print("MAC Address is: ");
+    Serial.println(WiFi.macAddress());
+
     Serial.println("Scan start");
 
     // WiFi.scanNetworks will return the number of networks found.
@@ -86,7 +89,7 @@ void loop()
             }
 
             // Also print on serial.
-            Serial.printf("%-32.32s", WiFi.SSID(i).c_str());
+            Serial.printf("%-32.32s\n", WiFi.SSID(i).c_str());
             delay(1);
         }
     }

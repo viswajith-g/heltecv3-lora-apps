@@ -18,3 +18,9 @@ Build the App and Flash the Board
 
 Load the LoRaGPS app to the Heltec V3 by pressing the right arrow button on the
 bottom blue bar in VSCode.
+
+WiFi Documentation
+------------------
+
+Refer to the [library
+docs](https://arduino-esp8266.readthedocs.io/en/latest/esp8266wifi/readme.html#scan).
