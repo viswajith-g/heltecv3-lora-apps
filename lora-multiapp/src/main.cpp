@@ -198,8 +198,11 @@ static void switch_app(void){
     printf("Joining App2\n");
   }
 
-  extern bool IsLoRaMacNetworkJoined; // enforce new join to TTN
-  IsLoRaMacNetworkJoined = false;
+  // we don't do this anymore because we use the force argument in 
+  // the .join() method to force a new connection
+  
+  // extern bool IsLoRaMacNetworkJoined; // enforce new join to TTN
+  // IsLoRaMacNetworkJoined = false;
 
   LoRaWAN.join(LORA_OTAA, true);
 }
