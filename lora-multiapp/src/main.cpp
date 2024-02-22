@@ -2,14 +2,14 @@
 #include "LoRaWan_APP.h"
 #include "Wire.h"
 #include <Arduino.h>
-#include <esp_timer.h>
+// #include <esp_timer.h>
 
 // How long to sleep after a packet has been transmitted before
 // sending the next packet.
 const uint32_t SLEEP_TIME_BETWEEN_EVENTS_MS = 60000;
 
 /*esp timer to toggle apps*/
-const uint64_t TIMER_PERIOD_US = 60000000;
+// const uint64_t TIMER_PERIOD_US = 60000000;
 
 // Use Over the Air Activation for joining the LoRaWAN network.
 const bool LORA_OTAA = true;
@@ -177,11 +177,12 @@ static void send_packet(void) {
 static void joined(void) {
   display_status(true);
   if(first_run){
-    send_packet();
-    first_run = false;
+    send_packet();      // send packet immediately after joining only for the first time.  
+    first_run = false;  // From the second time onwards, we rely on the tx cycle timer to send packets
     }
 }
 
+// Called after successfully receiving ack for a packet. We switch to the next app and join the network 
 static void switch_app(void){
   app1_flag = !app1_flag;
 	app2_flag = !app2_flag;
@@ -196,8 +197,10 @@ static void switch_app(void){
 		memcpy(appKey, appKey2, (sizeof(appKey)/sizeof(appKey[0])));
     printf("Joining App2\n");
   }
+
   extern bool IsLoRaMacNetworkJoined; // enforce new join to TTN
   IsLoRaMacNetworkJoined = false;
+
   LoRaWAN.join(LORA_OTAA, true);
 }
 
@@ -227,6 +230,8 @@ static void sent(uint8_t tries, bool acked) {
     // Increment number of packets acked.
     acked_count += 1;
 
+    // if this is not the first time we are running the code, 
+    // we want to join the second app after receiving ack
     if (!first_run){
       switch_app();
     }
@@ -239,8 +244,6 @@ static void sent(uint8_t tries, bool acked) {
     // will be preserved, and the LoRaWAN stack uses this extensively. So, when
     // the chip restarts we will still be joined to the LoRaWAN network.
     LoRaWAN.cycle(SLEEP_TIME_BETWEEN_EVENTS_MS);
-  
-    // send_packet();
   }
 }
 
@@ -251,11 +254,6 @@ void received(McpsIndication_t *mcpsIndication) {
   printf("+REV DATA:%s", mcpsIndication->RxSlot?"RXWIN2":"RXWIN1");
   printf(", RXSIZE %d", mcpsIndication->BufferSize);
   printf(", PORT %d\r\n", mcpsIndication->Port);
-//   printf("+REV DATA:");
-//   for (uint8_t i = 0; i < mcpsIndication->BufferSize; i++) {
-//     printf("%02X", mcpsIndication->Buffer[i]);
-//   }
-//   printf("\r\n");
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -274,8 +272,7 @@ void setup() {
   Mcu.begin();
   display.init();
 
-  // Configure the DEVEUI to be what is hardcoded in this chip.
-  // LoRaWAN.generateDeveuiByChipID();
+  // set the joinEUI and appKey based on which app we want to connect to
   if (app1_flag){
     memcpy(joinEui, joinEui1, (sizeof(joinEui)/sizeof(joinEui[0])));
 		memcpy(appKey, appKey1, (sizeof(appKey)/sizeof(appKey[0])));
